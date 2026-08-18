@@ -181,7 +181,6 @@ public class ImagePicker extends CordovaPlugin {
                 SELECT_PICTURE
             );
     
-            this.showMaxLimitWarning(useFilePicker);
             this.showMaxFileSizeWarning(allowVideo);
     
             return true;
@@ -191,107 +190,272 @@ public class ImagePicker extends CordovaPlugin {
     }
 
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-        ArrayList<JSONObject> imageInfos = new ArrayList<>();
-        executor.execute(() -> {
-            boolean sizeLimitExceeded = false;
-            try {
-                cordova.getActivity().runOnUiThread(() -> {
-                    showLoader();
-                });
-                
-                Uri uri;
-                String path;
-                if (resultCode == Activity.RESULT_OK && data != null) {
-                    ArrayList<String> fileURIs = new ArrayList<>();
-                    boolean isVideo = false;
-                    int maxFileSize = this.maxPhotoSize;
-                    if (requestCode == SELECT_PICTURE) {
-                        if (data.getClipData() != null) {
-                            uri = data.getData();
-                            isVideo = this.isVideo(uri);
-                            if (isVideo) {
-                                maxFileSize = this.maxVideoSize;
-                            }
-                            double size = this.getFileSizeFromUri(uri);
-                            if (size > maxFileSize) {
-                                sizeLimitExceeded = true;
-                            } else {
-                                path = ImagePicker.this.copyFileToInternalStorage(uri, "");
-                                if (path.equals("-1")) {
-                                    callbackContext.error(FILE_ACCESS_ERROR);
-                                    return;
-                                }
-                                fileURIs.add(path);
-                            }
-                        } else {
-                            ClipData clip = data.getClipData();
-                            for (int i = 0; i < clip.getItemCount(); i++) {
-                                uri = clip.getItemAt(i).getUri();
-                                isVideo = this.isVideo(uri);
-                                if (isVideo) {
-                                    maxFileSize = this.maxVideoSize;
-                                }
-                                double size = this.getFileSizeFromUri(uri);
-                                if (size > maxFileSize) {
-                                    sizeLimitExceeded = true;
-                                    if (i + 1 >= ImagePicker.this.maxImageCount) {
-                                        break;
-                                    }
-                                    continue;
-                                }
 
-                                path = ImagePicker.this.copyFileToInternalStorage(uri, "");
-                                if (path.equals("-1")) {
-                                    callbackContext.error(FILE_ACCESS_ERROR);
-                                    return;
-                                }
-                                fileURIs.add(path);
-                                if (i + 1 >= ImagePicker.this.maxImageCount) {
-                                    break;
-                                }
-                            }
+        if (requestCode != SELECT_PICTURE) {
+            return;
+        }
+    
+        if (resultCode != Activity.RESULT_OK || data == null) {
+            if (resultCode == Activity.RESULT_CANCELED) {
+                callbackContext.success(new JSONArray());
+            } else {
+                callbackContext.error("No images selected");
+            }
+            return;
+        }
+    
+        // Loader auf UI-Thread anzeigen
+        cordova.getActivity().runOnUiThread(() -> {
+            showLoader();
+        });
+    
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+    
+        executor.execute(() -> {
+    
+            boolean sizeLimitExceeded = false;
+    
+            try {
+    
+                ArrayList<String> fileURIs = new ArrayList<>();
+    
+                /*
+                 * ==========================================
+                 * MEHRFACHAUSWAHL
+                 * ==========================================
+                 */
+    
+                ClipData clipData = data.getClipData();
+    
+                if (clipData != null && clipData.getItemCount() > 0) {
+    
+                    int count = Math.min(
+                        clipData.getItemCount(),
+                        ImagePicker.this.maxImageCount
+                    );
+    
+                    Log.d(
+                        "ImagePicker",
+                        "MEHRFACHAUSWAHL: " + count + " Bilder"
+                    );
+    
+                    for (int i = 0; i < count; i++) {
+    
+                        Uri uri = clipData.getItemAt(i).getUri();
+    
+                        Log.d(
+                            "ImagePicker",
+                            "Bild " + (i + 1) + "/" + count + ": " + uri
+                        );
+    
+                        if (uri == null) {
+                            continue;
                         }
-                    }
-                    for (int i=0; i < fileURIs.size(); i++) {
-                        String fileUri = fileURIs.get(i);
-                        isVideo = this.isVideo(fileUri);
-                        BitmapFactory.Options options = new BitmapFactory.Options();
-                        options.inJustDecodeBounds = true;
-                        Uri ImageUri = Uri.parse(fileUri);
-                        BitmapFactory.decodeFile(new File(ImageUri.getPath()).getAbsolutePath(), options);
-                        JSONObject json = new JSONObject();
-                        json.put("path", fileUri);
-                        json.put("isVideo", isVideo);
-                        json.put("width", options.outWidth);
-                        json.put("height", options.outHeight);
-                        if (isVideo) {
-                            File videoFile = new File(fileUri);
-                            String videoThumbnail = this.generateVideoThumbnail(videoFile);
-                            json.put("thumbnail", videoThumbnail);
+    
+                        boolean isVideo = this.isVideo(uri);
+    
+                        int maxFileSize = isVideo
+                            ? this.maxVideoSize
+                            : this.maxPhotoSize;
+    
+                        double size = this.getFileSizeFromUri(uri);
+    
+                        Log.d(
+                            "ImagePicker",
+                            "Bild " + (i + 1) + " Größe: " + size + " MB"
+                        );
+    
+                        if (size > maxFileSize) {
+                            sizeLimitExceeded = true;
+                            continue;
                         }
-                        imageInfos.add(json);
+    
+                        String path =
+                            ImagePicker.this.copyFileToInternalStorage(
+                                uri,
+                                ""
+                            );
+    
+                        Log.d(
+                            "ImagePicker",
+                            "Bild " + (i + 1) + " kopiert nach: " + path
+                        );
+    
+                        if (path == null || path.equals("-1")) {
+                            callbackContext.error(FILE_ACCESS_ERROR);
+                            return;
+                        }
+    
+                        fileURIs.add(path);
                     }
-                    JSONArray res = new JSONArray(imageInfos);
-                    if (sizeLimitExceeded) {
-                        this.showMaxFileSizeExceededWarning();
+    
+                /*
+                 * ==========================================
+                 * EINZELAUSWAHL
+                 * ==========================================
+                 */
+    
+                } else if (data.getData() != null) {
+    
+                    Uri uri = data.getData();
+    
+                    Log.d(
+                        "ImagePicker",
+                        "EINZELAUSWAHL: " + uri
+                    );
+    
+                    boolean isVideo = this.isVideo(uri);
+    
+                    int maxFileSize = isVideo
+                        ? this.maxVideoSize
+                        : this.maxPhotoSize;
+    
+                    double size = this.getFileSizeFromUri(uri);
+    
+                    if (size > maxFileSize) {
+    
+                        sizeLimitExceeded = true;
+    
+                    } else {
+    
+                        String path =
+                            ImagePicker.this.copyFileToInternalStorage(
+                                uri,
+                                ""
+                            );
+    
+                        if (path == null || path.equals("-1")) {
+                            callbackContext.error(FILE_ACCESS_ERROR);
+                            return;
+                        }
+    
+                        fileURIs.add(path);
                     }
-                    callbackContext.success(res);
-                } else if (resultCode == Activity.RESULT_CANCELED && data != null) {
-                    String error = data.getStringExtra("ERRORMESSAGE");
-                    callbackContext.error("Error: " + error);
-                } else if (resultCode == Activity.RESULT_CANCELED) {
-                    JSONArray res = new JSONArray();
-                    callbackContext.success(res);
+    
                 } else {
+    
                     callbackContext.error("No images selected");
+                    return;
                 }
-                
+    
+                /*
+                 * ==========================================
+                 * ERGEBNIS ERSTELLEN
+                 * ==========================================
+                 */
+    
+                ArrayList<JSONObject> imageInfos =
+                    new ArrayList<>();
+    
+                for (int i = 0; i < fileURIs.size(); i++) {
+    
+                    String fileUri = fileURIs.get(i);
+    
+                    Log.d(
+                        "ImagePicker",
+                        "Verarbeite Ergebnis " +
+                        (i + 1) +
+                        "/" +
+                        fileURIs.size() +
+                        ": " +
+                        fileUri
+                    );
+    
+                    boolean isVideo = this.isVideo(fileUri);
+    
+                    JSONObject json = new JSONObject();
+    
+                    json.put("path", fileUri);
+                    json.put("isVideo", isVideo);
+    
+                    if (!isVideo) {
+    
+                        BitmapFactory.Options options =
+                            new BitmapFactory.Options();
+    
+                        options.inJustDecodeBounds = true;
+    
+                        Uri imageUri = Uri.parse(fileUri);
+    
+                        String imagePath = imageUri.getPath();
+    
+                        if (imagePath != null) {
+    
+                            BitmapFactory.decodeFile(
+                                imagePath,
+                                options
+                            );
+    
+                            json.put("width", options.outWidth);
+                            json.put("height", options.outHeight);
+                        }
+    
+                    } else {
+    
+                        json.put("width", 0);
+                        json.put("height", 0);
+    
+                        File videoFile = new File(
+                            Uri.parse(fileUri).getPath()
+                        );
+    
+                        String videoThumbnail =
+                            this.generateVideoThumbnail(videoFile);
+    
+                        json.put(
+                            "thumbnail",
+                            videoThumbnail
+                        );
+                    }
+    
+                    imageInfos.add(json);
+                }
+    
+                JSONArray result =
+                    new JSONArray(imageInfos);
+    
+                Log.d(
+                    "ImagePicker",
+                    "================================="
+                );
+    
+                Log.d(
+                    "ImagePicker",
+                    "ANZAHL ERGEBNISSE: " +
+                    result.length()
+                );
+    
+                Log.d(
+                    "ImagePicker",
+                    "ERGEBNIS: " +
+                    result.toString()
+                );
+    
+                if (sizeLimitExceeded) {
+                    this.showMaxFileSizeExceededWarning();
+                }
+    
+                callbackContext.success(result);
+    
+            } catch (Exception e) {
+    
+                Log.e(
+                    "ImagePicker",
+                    "Unexpected error",
+                    e
+                );
+    
+                callbackContext.error(
+                    "Unexpected error: " + e.getMessage()
+                );
+    
+            } finally {
+    
                 cordova.getActivity().runOnUiThread(() -> {
                     hideLoader();
                 });
-            } catch (Exception e) {
-                callbackContext.error("Unexpected error: " + e);
+    
+                executor.shutdown();
             }
         });
     }
