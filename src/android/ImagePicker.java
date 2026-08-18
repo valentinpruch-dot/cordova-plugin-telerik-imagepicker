@@ -122,23 +122,59 @@ public class ImagePicker extends CordovaPlugin {
                 mimeTypes.add("video/*");
             }
     
-            Intent imagePickerIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-    
-            imagePickerIntent.setType("*/*");
-    
-            imagePickerIntent.putExtra(
-                Intent.EXTRA_MIME_TYPES,
-                mimeTypes.toArray(new String[0])
-            );
-    
-            // Mehrfachauswahl aktivieren
-            imagePickerIntent.putExtra(
-                Intent.EXTRA_ALLOW_MULTIPLE,
-                true
-            );
-    
-            imagePickerIntent.addCategory(Intent.CATEGORY_OPENABLE);
-    
+            Intent imagePickerIntent;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !allowVideo) {
+            
+                imagePickerIntent = new Intent(MediaStore.ACTION_PICK_IMAGES);
+            
+                imagePickerIntent.setType("image/*");
+            
+                imagePickerIntent.putExtra(
+                    MediaStore.EXTRA_PICK_IMAGES_MAX,
+                    this.maxImageCount
+                );
+            
+                Log.d(
+                    "ImagePicker",
+                    "PHOTO PICKER MULTI: max=" + this.maxImageCount
+                );
+            
+            } else {
+            
+                imagePickerIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            
+                imagePickerIntent.setType("*/*");
+            
+                imagePickerIntent.putExtra(
+                    Intent.EXTRA_MIME_TYPES,
+                    mimeTypes.toArray(new String[0])
+                );
+            
+                imagePickerIntent.putExtra(
+                    Intent.EXTRA_ALLOW_MULTIPLE,
+                    true
+                );
+            
+                imagePickerIntent.addCategory(Intent.CATEGORY_OPENABLE);
+            
+                Log.d(
+                    "ImagePicker",
+                    "DOCUMENT PICKER MULTI: max=" + this.maxImageCount
+                );
+            }
+
+            Log.d("ImagePicker", "=== PICKER START ===");
+            Log.d("ImagePicker", "ACTION = " + imagePickerIntent.getAction());
+            Log.d("ImagePicker", "TYPE = " + imagePickerIntent.getType());
+            Log.d("ImagePicker", "MAX = " +
+                    imagePickerIntent.getIntExtra(
+                            MediaStore.EXTRA_PICK_IMAGES_MAX,
+                            -1
+                    ));
+            Log.d("ImagePicker", "SDK = " + Build.VERSION.SDK_INT);
+            Log.d("ImagePicker", "Intent = " + imagePickerIntent);
+                
             cordova.startActivityForResult(
                 this,
                 imagePickerIntent,
@@ -171,7 +207,7 @@ public class ImagePicker extends CordovaPlugin {
                     boolean isVideo = false;
                     int maxFileSize = this.maxPhotoSize;
                     if (requestCode == SELECT_PICTURE) {
-                        if (data.getData() != null) {
+                        if (data.getClipData() != null) {
                             uri = data.getData();
                             isVideo = this.isVideo(uri);
                             if (isVideo) {
