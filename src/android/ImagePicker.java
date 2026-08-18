@@ -30,8 +30,6 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
-import androidx.activity.result.PickVisualMediaRequest;
-import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.content.ContextCompat;
 
 import org.apache.cordova.CallbackContext;
@@ -67,51 +65,92 @@ public class ImagePicker extends CordovaPlugin {
     private int maxVideoSize;
     private LinearLayout layout = null;
 
-    public boolean execute(String action, final JSONArray args, final CallbackContext callbackContext) throws JSONException {
+   public boolean execute(String action, final JSONArray args, final CallbackContext callbackContext) throws JSONException {
         this.callbackContext = callbackContext;
+    
         if (ACTION_HAS_READ_PERMISSION.equals(action)) {
-            callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, hasReadPermission()));
+            callbackContext.sendPluginResult(
+                new PluginResult(
+                    PluginResult.Status.OK,
+                    hasReadPermission()
+                )
+            );
             return true;
+    
         } else if (ACTION_REQUEST_READ_PERMISSION.equals(action)) {
             requestReadPermission();
             return true;
+    
         } else if (ACTION_GET_PICTURES.equals(action)) {
             final JSONObject params = args.getJSONObject(0);
-            this.maxImageCount = params.has("maximumImagesCount") ? params.getInt("maximumImagesCount") : 20;
-            this.maxPhotoSize = params.has("maxPhotoSize") ? params.getInt("maxPhotoSize") : 15;
-            this.maxVideoSize = params.has("maxVideoSize") ? params.getInt("maxVideoSize") : 5;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && SdkExtensions.getExtensionVersion(Build.VERSION_CODES.R) >= 2) {
+    
+            this.maxImageCount = params.has("maximumImagesCount")
+                ? params.getInt("maximumImagesCount")
+                : 20;
+    
+            this.maxPhotoSize = params.has("maxPhotoSize")
+                ? params.getInt("maxPhotoSize")
+                : 15;
+    
+            this.maxVideoSize = params.has("maxVideoSize")
+                ? params.getInt("maxVideoSize")
+                : 5;
+    
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                    && SdkExtensions.getExtensionVersion(Build.VERSION_CODES.R) >= 2) {
+    
                 int deviceMaxLimit = MediaStore.getPickImagesMaxLimit();
-               if (this.maxImageCount > deviceMaxLimit) {
-                   this.maxImageCount = deviceMaxLimit;
-                   this.showMaxLimitWarning(deviceMaxLimit);
-               };
-            }
-
-            boolean useFilePicker = params.has("useFilePicker") && params.getBoolean("useFilePicker");
-            boolean allowVideo = params.has("allow_video") && params.getBoolean("allow_video");
-
-            Intent imagePickerIntent = null;
-            if (useFilePicker) {
-                List<String> mimeTypes = new ArrayList<>();
-                mimeTypes.add("image/*");
-                if (allowVideo) {
-                    mimeTypes.add("video/*");
+    
+                if (this.maxImageCount > deviceMaxLimit) {
+                    this.maxImageCount = deviceMaxLimit;
+                    this.showMaxLimitWarning(deviceMaxLimit);
                 }
-                imagePickerIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                imagePickerIntent.setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "*/*");
-                imagePickerIntent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.toArray(new String[0]));
-                imagePickerIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-            } else {
-                PickVisualMediaRequest pickVisualMediaRequest = new PickVisualMediaRequest.Builder().setMediaType(allowVideo ? ActivityResultContracts.PickVisualMedia.ImageAndVideo.INSTANCE : ActivityResultContracts.PickVisualMedia.ImageOnly.INSTANCE).build();
-                imagePickerIntent = new ActivityResultContracts.PickMultipleVisualMedia(maxImageCount).createIntent(cordova.getContext(), pickVisualMediaRequest);
             }
-
-            cordova.startActivityForResult(this, imagePickerIntent, SELECT_PICTURE);
+    
+            boolean useFilePicker =
+                params.has("useFilePicker")
+                    && params.getBoolean("useFilePicker");
+    
+            boolean allowVideo =
+                params.has("allow_video")
+                    && params.getBoolean("allow_video");
+    
+            List<String> mimeTypes = new ArrayList<>();
+            mimeTypes.add("image/*");
+    
+            if (allowVideo) {
+                mimeTypes.add("video/*");
+            }
+    
+            Intent imagePickerIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+    
+            imagePickerIntent.setType("*/*");
+    
+            imagePickerIntent.putExtra(
+                Intent.EXTRA_MIME_TYPES,
+                mimeTypes.toArray(new String[0])
+            );
+    
+            // Mehrfachauswahl aktivieren
+            imagePickerIntent.putExtra(
+                Intent.EXTRA_ALLOW_MULTIPLE,
+                true
+            );
+    
+            imagePickerIntent.addCategory(Intent.CATEGORY_OPENABLE);
+    
+            cordova.startActivityForResult(
+                this,
+                imagePickerIntent,
+                SELECT_PICTURE
+            );
+    
             this.showMaxLimitWarning(useFilePicker);
             this.showMaxFileSizeWarning(allowVideo);
+    
             return true;
         }
+    
         return false;
     }
 
